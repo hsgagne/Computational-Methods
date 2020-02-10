@@ -1,0 +1,221 @@
+"""
+Name: Assignment 2.py
+Title: MF796 HW 2: Quadrature Pricing
+Author: Henry Gagne
+Description: Contains functions for pricing European Calls Using Quadrature
+"""
+from BSOption_Class import BSEuroCallOption
+import math
+import numpy as np
+
+
+#Calculate and store the Black Scholes Option price for quadrature pricing comparison
+
+
+def Payoff_Function(x,r,t,sigma,s0,K):
+    #Defines the payoff function to be estimated using quadrature
+    payoff = math.exp(-r*t)*(s0*math.exp(r*t-0.5*sigma*sigma*t+sigma*math.sqrt(t)*x)-K)
+    density = math.exp(-0.5*x**2)/math.sqrt(2*math.pi)
+    return payoff*density
+
+
+def Riemann_Quad_Left(r,t,sigma,s0,K,ubound,n):
+    
+    xi = []
+    ttl = 0
+    lbound = (math.log(K/s0)-(r-0.5*sigma*sigma)*t)/(sigma*math.sqrt(t))
+    dz = (ubound - lbound)/n
+    
+    for i in range(n):
+        xi = xi + [lbound + dz*(i)]
+    for elem in xi:
+        ttl = ttl + Payoff_Function(elem,r,t,sigma,s0,K)*(dz)
+
+    return ttl
+
+def Riemann_Quad_Mid(r,t,sigma,s0,K,ubound,n):
+    
+    xi = []
+    ttl = 0
+    
+    lbound = (math.log(K/s0)-(r-0.5*sigma*sigma)*t)/(sigma*math.sqrt(t))
+    dz = (ubound - lbound)/n
+    
+    for i in range(n):
+        xi = xi + [lbound+ dz/2 + dz*i]
+    for elem in xi:
+        ttl = ttl + Payoff_Function(elem,r,t,sigma,s0,K)*(dz)
+
+    return ttl
+
+def Gauss_Quad(r,t,sigma,s0,K,ubound,n):
+    
+    ttl = 0
+    lbound = (math.log(K/s0)-(r-0.5*sigma*sigma)*t)/(sigma*math.sqrt(t))
+    
+    nodes = []
+    weights = []
+    xi = []
+    temp = np.polynomial.legendre.leggauss(n)
+    nodes = temp[0]
+    weights = temp[1]
+    
+    for elem in nodes:
+        xi = xi +[.5*(ubound - lbound)*elem+.5*(ubound+lbound)]
+        
+    for i in range(len(xi)):
+        ttl = ttl + Payoff_Function(xi[i],r,t,sigma,s0,K)*weights[i]
+    
+    sum_gauss=ttl*(ubound-lbound)*0.5
+    
+    return sum_gauss
+        
+def Calc_Option_Price_and_Errors(option,N):
+    """Inputs:
+              option: a BSOptionClass
+              N: a list of numbers of nodes
+    """
+    results = []
+    s = option.s_price
+    K = option.strike
+    t = option.ttm
+    sigma = option.sd
+    rf = option.rf_rate
+    div = option.div_rate
+    ubound = 5
+    
+    actual = option.value()
+    
+    for elem in N:
+        results += [[Riemann_Quad_Left(rf,t,sigma,s,K,ubound,elem),Riemann_Quad_Mid(rf,t,sigma,s,K,ubound,elem),Gauss_Quad(rf,t,sigma,s,K,ubound,elem)]]
+
+    errors = np.array(results)
+    errors = errors - actual
+
+    for i in range(len(N)):
+        for j in range(len(errors[i])):
+            errors[i][j] = errors[i][j]/N[i]
+
+    print("Standardized Errors:")
+    print("# of Nodes| Left Riemann  |  Mid Riemann |  Gauss-Legendre")
+    for i in range(len(N)):
+        print("%4.0f      | %10.8f   |  %10.8f  |  %10.8f"%(N[i], errors[i][0], errors[i][1], errors[i][2]))
+    
+    return
+   
+#Script to generate answers for part 1
+if __name__ == '__main__':
+    
+    N = [5,10,50,100]
+    opt1 = BSEuroCallOption(10,12,.25,.2,.04,0)
+    Calc_Option_Price_and_Errors(opt1,N)
+
+###########PART 2: Contingent Claim Option Pricing####################################
+
+def Vanilla_Payoff(s0,sT,sigma,K):
+    """Payoff Eq for Vanilla Option"""
+    return  (sT-K)*math.exp(-((sT-s0)**2)/(2*sigma**2))*(1/(sigma*(2*math.pi)**0.5))
+
+def joint_normal(s0,s1,s2,sigma1,sigma2,rho):
+    """Payoff Eq for Jointly Normal contingent Option"""
+    c = 1/(2*math.pi*sigma1*sigma2*(1-rho**2)**.5)
+    z = (s1-s0)**2/sigma1**2 - (2*rho*(s1-s0)*(s2-s0))/(sigma1*sigma2)+(s2-s0)**2/sigma2**2
+    return c*math.exp(-z/(2*(1-rho**2)))*(s1 - K)
+
+def Gauss_Quad_Vanilla(r,t,sigma,s0,K,ubound,n):
+    """Quadrature for Vanilla Option, using Gauss-Laguere"""
+    ttl = 0
+    lbound = K
+    nodes = []
+    weights = []
+    xi = []
+    temp = np.polynomial.legendre.leggauss(n)
+    nodes = temp[0]
+    weights = temp[1]
+    
+    for elem in nodes:
+        xi = xi +[.5*(ubound - lbound)*elem+.5*(ubound+lbound)]
+        
+    for i in range(len(xi)):
+        ttl = ttl + Vanilla_Payoff(s0,xi[i],sigma,K)*weights[i]
+    
+    ret_ttl=ttl*(ubound-lbound)*0.5
+    
+    return ret_ttl
+
+def Riemann_Quad_Mid_Vanilla(r,t,sigma,s0,K,ubound,n):
+    """Quadrature for Vanilla Option, Using Riemann Midpoint"""
+    xi = []
+    ttl = 0
+    
+    lbound = K
+    dz = (ubound - lbound)/n
+    
+    for i in range(n):
+        xi = xi + [lbound+ dz/2 + dz*i]
+    for elem in xi:
+        ttl = ttl + Vanilla_Payoff(s0,elem,sigma,K)*(dz)
+
+    return ttl
+
+def Riemann_Mid_2D_Quad(r,t,sigma1,sigma2,s0,K,rho,lbound_i,ubound_i,lbound_o,ubound_o,n):
+    """2 variable Riemann midpoint quadrature for contingent option pricing"""
+    
+    #set the weight for the inner and outer integrals
+    dz_i = (ubound_i - lbound_i)/n
+    dz_o = (ubound_o - lbound_o)/n
+    #initialize variables
+    xi = []
+    yi = []
+    ttl = 0
+
+    #Populate arrays with quadrature nodes
+    for i in range(n):
+        xi = xi + [lbound_i+ dz_i/2 + dz_i*i]
+        yi = yi + [lbound_o+ dz_o/2 + dz_o*i]
+        
+    #loop through arrays, accumulating output of joint normal at each node
+    for i in range(n):
+        for j in range(n):
+            if j == i:
+                ttl = ttl + joint_normal(s0,xi[i],yi[j],sigma1,sigma2,rho)*(dz_i)*(dz_o)
+            else:
+                ttl = ttl + joint_normal(s0,xi[i],yi[j],sigma1,sigma2,rho)*(dz_i)*dz_o
+                ttl = ttl + joint_normal(s0,xi[j],yi[i],sigma1,sigma2,rho)*(dz_i)*dz_o
+                
+    return ttl
+
+########################################################                
+#Scripting to calculate answers for part ii
+if __name__ == '__main__':
+    
+    r = 0 #rf rate
+    t = 1 #ttm of option
+    K=370 #strike price
+    s0=324.12  #initial stock price
+    rho=0.95 #correlation coef
+    
+    sigma1 = 20 #1 yr sigma
+    sigma2 = 15 #6 mo sigma
+    upper=500 #limit for vanilla option integration
+    n=100 #number of nodes for vanilla option
+    
+    #integral boundaries
+    ubound_o=365 
+    lbound_o=200
+    ubound_i = s0+(4*sigma1)
+    lbound_i = 370
+        
+    print("Vanilla Option Value (RM Midpoint, N=%d):"%n, Riemann_Quad_Mid_Vanilla(r,t,sigma1,s0,K,upper,1000))
+    print("Vanilla Option Value:(Gauss Quad, N=%d):"%n, Gauss_Quad_Vanilla(r,t,sigma1,s0,K,upper,1000))
+    
+    for elem in [.95,.8,.5,.2]:
+        print("Contingent Opt Val, rho = %3.2f:"%elem,Riemann_Mid_2D_Quad(r,t,sigma1,sigma2,s0,K,elem,lbound_i,ubound_i,lbound_o,ubound_o,500))
+    
+    for elem in [365,360,350,340]:
+        print("Contingent Opt Val, 6mo cutoff = %d:"%elem,Riemann_Mid_2D_Quad(r,t,sigma1,sigma2,s0,K,rho,lbound_i,ubound_i,lbound_o,elem,500))
+
+
+
+    
+    
