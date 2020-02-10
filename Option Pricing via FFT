@@ -1,0 +1,153 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Wed Feb  5 12:58:19 2020
+
+@author: hsgag
+"""
+import math
+from scipy.fftpack import fft
+import scipy
+import mpmath as mp
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+
+
+class Heston_Model():
+    
+    def __init__(self,sigma, v0,s0,K, k , rho, theta,t,r,q,N):
+        self.sigma = sigma
+        self.v0 = v0
+        self.s0 = s0
+        self.k = k
+        self.strike = K,
+        self.rho = rho
+        self.theta = theta
+        self.ttm = t
+        self.rf = r
+        self.q = q
+        self.N = N
+        
+
+
+    def Heston_Char_Eq(self,u):
+        
+        l = np.sqrt((u*u + 1j*u)*self.sigma**2 + (self.k - 1j*self.rho*self.sigma*u)**2)
+        w_num = np.exp(1j*u*np.log(self.s0) + 1j*u*(self.rf - self.q)*self.ttm + self.k*self.theta*self.ttm*(self.k - 1j*self.rho*self.sigma*u)/self.sigma**2)
+        w_denom = (np.cosh(l*self.ttm/2) + np.sinh(l*self.ttm/2)*(self.k - 1j*self.rho*self.sigma*u)/l) ** (2*self.k*self.theta/(sigma**2))
+        p_num = -(u**2 + 1j * u)*self.v0
+        p_denom = l*np.cosh((l*self.ttm/2))/np.sinh((l*self.ttm/2)) + self.k - 1j*self.rho*self.sigma*u
+        
+        return (w_num/w_denom)*np.exp(p_num/p_denom)
+    
+    """
+    def Calculate_Call_Price(self,d_v, alpha):
+        
+        delta_k = 2*np.pi/(self.N*d_v)
+        beta = np.log(self.s0) - delta_k*self.N/2
+        v_s = np.arange(self.N) *d_v
+        k_s = beta + np.arange(self.N)*delta_k
+        deltas = np.zeros(self.N)
+        deltas[0] = 1
+        'w_arr = d_v / 3 * (3 + (-1) ** (np.arange(self.N) + 1) - delta_arr)'
+        weights  = .5*d_v*np.ones(self.N)*(2 -deltas)
+        call_chf = (np.exp(-self.rf * self.ttm) / ((alpha + 1j * v_s) * (alpha + 1j * v_s + 1))) * self.Heston_Char_Eq(v_s - (alpha + 1) * 1j)
+        x_arr = np.exp(-1j * beta * v_s) * call_chf * weights
+        fft_prices = (fft(x_arr))
+        call_prices = (np.exp(-alpha * k_s) / np.pi) * fft_prices.real
+        return  np.exp(k_s), call_prices
+    """
+    
+    
+    def Calculate_Call_Price(self,delta_v,alpha,K = None):
+        
+        if not K == None:
+            delta_k = 2*math.pi/(delta_v*self.N)
+            beta = np.log(K) - delta_k*self.N/2
+        else:
+        #first we need to set up the strike spacing grid, using delta_v
+            delta_k = 2*math.pi/(delta_v*self.N)
+            beta = np.log(s0) - .5*delta_k*self.N
+        k_s = beta + np.arange(self.N)*delta_k
+        
+        #next we set up the vector weights
+        deltas = np.zeros(self.N)
+        deltas[0] = 1
+        weights = .5*delta_v*(2 - deltas)
+        
+        #Next we create the input vector to the characteristic function, multiplied by dampening factor
+        v_s = np.arange(self.N)*delta_v
+        ch_funct_vals = self.Heston_Char_Eq(v_s - (alpha+1)*1j)/((alpha + 1j*v_s)*(alpha + 1j*v_s +1))
+        
+        #Creates the vector of inputs to the FFT algorithm, and get an output vector
+        x_s = np.exp(-self.ttm*self.rf)*weights * np.exp(-1j*beta * v_s)*ch_funct_vals
+        fft_s = fft(x_s)
+        
+        #lastly we recover the call prices using the fft output vector
+        call_prices = np.exp(-alpha*k_s)/np.pi * fft_s.real
+        
+        #return the strike values and call prices associated w/ each strike
+        return np.exp(k_s), call_prices
+    
+
+if __name__ == '__main__':
+    #parameter initialization
+    sigma = .2
+    rf = .02
+    v0 = .08
+    s0 = 250
+    lil_k = .7
+    rho = -.4
+    theta = .1
+    t = .5
+    big_K = 250
+    
+    #create a pricing model
+    pricer = Heston_Model(sigma,v0,s0,big_K, lil_k, rho, theta, t,rf,0,8)
+    
+    #code to generate call prices for differing alphas
+    delta_v = 20
+    for x in  np.linspace(1,30,20):
+        prices = pricer.Calculate_Call_Price(delta_v,x)
+        print("alpha = %4.3f:"%x,"delta_v = %4.3f"%delta_v)
+        for i in range(len(prices[0])):
+            print("Strike: %5.2f | Call price: %5.4f"%(prices[0][i],prices[1][i]))
+        print()
+    
+
+
+    alpha = 6.20  
+    for n in [2,4,8,16,32,64,128,256]:
+        pricer = Heston_Model(sigma,v0,s0,big_K, lil_k, rho, theta, t,rf,0,n)
+        prices = np.array(pricer.Calculate_Call_Price(10,alpha))
+        plt.plot(prices[0],prices[1])
+
+
+
+    num_points = 8
+    df_master = pd.DataFrame()
+    for dk in np.linspace(1,20,num_points):  
+        for n in [2,4,8,16,32,64,128]:
+            pricer = Heston_Model(sigma,v0,s0,big_K, lil_k, rho, theta, t,rf,0,n)
+            c_price = np.array(pricer.Calculate_Call_Price(dk,alpha))[1][(n//2)]
+            df = pd.DataFrame([c_price])
+            df.columns = ["Call Price"]
+            df['delta_k'] = np.array(dk)
+            df['N'] = np.array(n)
+            df_master = pd.concat([df,df_master])
+
+    x_s = df_master['delta_k']
+    y_s = df_master['N']
+    X,Y = np.meshgrid(x_s,y_s)
+    z_s = np.array(pricer.Calculate_Call_Price(X,Y))
+    Z = z_s.reshape(X.shape)
+    
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    plt.plot()
+    
+
+        
+
+    
