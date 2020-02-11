@@ -1,0 +1,169 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Oct 31 11:05:34 2019
+Title: Assignment 8, Task 1
+Name: a8task1.pu
+Description: Option Pricing Classes using Black Scholes
+@author: Henry
+"""
+import math
+import scipy
+from scipy.stats import norm
+import numpy as np
+
+class BSOption:
+    
+    def __init__(self,s,x,t,sigma,rf,div):
+        """Initializes a generic Black Schole's Option
+        inputs:
+            s: stock price, a nonnegative number
+            x: strike price, a nonnegative number
+            t: ttm, a nonnegative number
+            sigma: standard deviation, a nonnegative number
+            rf: risk free rate, a number
+            div: dividend rate, a number
+        """
+        self.s_price = s
+        self.strike = x
+        self.ttm = t
+        self.sd =sigma
+        self.rf_rate = rf
+        self.div_rate = div
+        
+    def __repr__(self):
+        """Returns a string representation of a BS Option"""
+        
+        printstr = "s = ${:5.2f}, ".format(self.s_price)
+        printstr += "x = ${:5.2f}, ".format(self.strike)
+        printstr += "t = {:3.2f} (years), ".format(self.ttm)
+        printstr += "sigma = {:4.2f}, ".format(self.sd)
+        printstr += "rf = {:4.3f}, ".format(self.rf_rate)
+        printstr += "div = {:4.3f}".format(self.div_rate)
+        return printstr
+    
+    def d1(self):
+        """Calculates and returns the d1 factor for a BS option"""
+        
+        return  ((self.sd * self.ttm**.5)**-1)*(math.log(self.s_price/self.strike)+(self.rf_rate - self.div_rate + .5*self.sd**2)*self.ttm)
+        
+    def d2(self):
+        """Calculates and returns the d2 factor for a BS option"""
+        return self.d1() - (self.sd)*(self.ttm**.5)
+    
+    def nd1(self):
+        """Calculates and returns the normal CDF value of the d1 factor of a BS option"""
+        return scipy.stats.norm.cdf(self.d1())
+        
+    def nd2(self):
+        """Calculates and returns the normal CDF value of the d2 factor of a BS option"""
+        return scipy.stats.norm.cdf(self.d2())
+    
+    def delta(self):
+        print("Cannot calculate delta for base class BSOption")
+        return 0
+    
+    def value(self):
+        print("Cannot calculate value of base class BSOption")
+        return 0
+    
+    def vega(self):
+        vega = 1/np.sqrt(np.pi*2)*self.s_price*np.exp(-self.div_rate*self.ttm)*np.exp(-(self.d1()**2)*.5)*np.sqrt(self.ttm)
+        return vega
+    
+class BSEuroCallOption(BSOption):
+    
+    def __init__(self,s,x,t,sigma,rf,div):
+        """Initializes a BSEuroCallOption using the base class BSOption
+            inputs:
+            s: stock price, a nonnegative number
+            x: strike price, a nonnegative number
+            t: ttm, a nonnegative number
+            sigma: standard deviation, a nonnegative number
+            rf: risk free rate, a number
+            div: dividend rate, a number
+        """
+        #call the superclass init method to initialize parameters
+        super().__init__(s,x,t,sigma,rf,div)
+        
+    def __repr__(self):
+        """Returns a string representation of the call option
+        """
+        printstr = 'BSEuroCallOption, Value = ${:5.2f}\n'.format(self.value())
+        printstr = printstr + 'parameters = ('+ super().__repr__() + ')'
+        return printstr
+        
+        
+    def value(self):
+        """Calculates and returns the Black Scholes price of a Euro Call option
+        """
+        #use base class methods and imported libraries to calculate the desired price
+        return self.nd1()*self.s_price*math.exp(-self.div_rate*self.ttm) - self.nd2()*self.strike*math.exp(-self.rf_rate*self.ttm)
+    
+    def delta(self):
+        """Calculates and returns the delta factor for a BS Euro Call
+        """
+        #already have function for delta, just call and return
+        return self.nd1()
+    
+    def newton_vol_call(self, C):
+    
+        #S: spot price
+        #K: strike price
+        #T: time to maturity
+        #C: Call value
+        #r: interest rate
+        #sigma: volatility of underlying asset
+    
+        d1 = (np.log(self.s_price / self.strike) + (self.rf_rate - 0.5 * self.sd** 2) * self.ttm) / (self.sd * np.sqrt(self.ttm))
+        d2 = (np.log(self.s_price / self.strike) + (self.rf_rate - 0.5 * self.sd ** 2) * self.ttm) / (self.sd * np.sqrt(self.ttm))
+        
+        fx = self.s_price * self.nd1() - self.strike * np.exp(-self.rf_rate * self.ttm) * self.nd2() - self.value()
+        
+        vega = (1 / np.sqrt(2 * np.pi)) * self.s_price * np.sqrt(self.ttm) * np.exp(-(self.nd1() ** 2) * 0.5)
+    
+        tolerance = 0.000001
+        x0 = self.sd
+        xnew  = x0
+        xold = x0 - 1
+        
+        while abs(xnew - xold) > tolerance:
+    
+            xold = xnew
+            xnew = (xnew - fx - C) / vega
+        
+            return abs(xnew)
+    
+class BSEuroPutOption(BSOption):
+    
+    def __init__(self,s,x,t,sigma,rf,div):
+        """Initializes a BSEuroCallOption using the base class BSOption
+        """
+        #call the superclass init method to initialize parameters
+        super().__init__(s,x,t,sigma,rf,div)
+    
+    def __repr__(self):
+        """Returns a string representation of the put option
+        """
+        printstr = 'BSEuroPutOption, Value = ${:5.2f}\n'.format(self.value())
+        printstr = printstr + 'parameters = ('+ super().__repr__() + ')'
+        return printstr
+        
+    def value(self):
+        """Calculates and returns the Black Scholes price of a Euro Call option
+        """
+        #use base class methods and imported libraries to calculate the desired price
+        return (1-self.nd2())*self.strike*math.exp(-self.rf_rate*self.ttm) - (1-self.nd1())*self.s_price*math.exp(-self.div_rate*self.ttm)
+    
+    def delta(self):
+        """Calculates and returns the delta factor for a BS Euro Call
+        """
+        #already have function for delta, just call and return
+        return self.nd1() - 1
+            
+if __name__ == '__main__':
+    opt1 = BSEuroCallOption(10,12,.25,.2,.04,0)
+    print("Option Value is: %8.7f"%opt1.value())
+    
+
+
+
