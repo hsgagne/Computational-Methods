@@ -1,0 +1,146 @@
+                                                                                                                                                                                                                                                                                                                              # -*- coding: utf-8 -*-
+"""
+Created on Thu Feb 20 13:01:09 2020
+
+@author: Henry
+"""
+import numpy as np
+import pandas as pd
+import scipy
+from scipy.stats import norm
+import scipy.optimize as optim
+import math
+import matplotlib.pyplot as plt
+import BSOption_Class
+from Assignment_3 import Heston_Model
+
+def extract_strike(s,t,sigma,rf,div, delta, _type):
+    """Function takes all black scholes parameters besides strike, and retuns strike"""    
+    d1 = norm.ppf(delta)
+    if _type == "put":
+        _exp = d1*sigma*t**.5 + t*(rf - div - .5*sigma**2)
+    if _type =="call":
+        _exp = -d1*sigma*t**.5 + t*(rf - div - .5*sigma**2)
+    return s*math.exp(_exp)
+
+def extract_risk_neural_point(option,h):
+    s = option.s_price
+    k = option.strike
+    t = option.ttm
+    sigma = option.sd
+    rf = option.rf_rate
+    div = option.div_rate
+    opt = option.value()
+    opt_low = BSEuroCallOption(s,k-h,t,sigma,rf,div).value()
+    opt_high = BSEuroCallOption(s,k+h,t,sigma,rf,div).value()
+    
+    
+    return math.exp(rf*t)*((opt_low - 2*opt + opt_high)/h**2)
+
+#PROBLEM 1: Extract Risk Neutral Density w/ Breeden-Letizberger
+deltas = np.array([.10,.25,.40,.50,.40,.25,.10])
+types = np.array(["put","put","put","call","call","call","call"])
+t1 = np.array([1,1,1,1,1,1,1])/12
+t2 = np.array([3,3,3,3,3,3,3])/12
+
+
+sigmas_1mo = [.3225,.2473,.2021,.1824,.1574,.1370,.1148]
+sigmas_3mo = [.2836,.2178,.1818,.1645,.1462,.1256,.1094]
+    
+    
+strikes1 = []
+strikes2 = []
+for i in range(len(deltas)):
+    strikes1 += [extract_strike(100,t1[i],sigmas_1mo[i],0,0,deltas[i],types[i])]
+    strikes2 += [extract_strike(100,t2[i],sigmas_3mo[i],0,0,deltas[i],types[i])]
+print(strikes1)
+
+
+more_strikes1 = np.linspace(strikes1[0] - 15, strikes1[-1] + 15,500)
+more_strikes2 = np.linspace(strikes2[0] - 15, strikes2[-1] + 15,500)
+
+
+more_sigmas_1mo = np.interp(more_strikes1,strikes1,sigmas_1mo)
+more_sigmas_3mo = np.interp(more_strikes2,strikes2,sigmas_3mo)
+
+
+#plt.plot(more_sigmas_1mo, more_strikes1, label="1mo")
+#plt.plot(more_sigmas_3mo, more_strikes2, label="3mo")
+
+h = .01
+rn_points = []
+rn_points2 = []
+for i in range(len(more_strikes1)):
+    opt = BSEuroCallOption(100,more_strikes1[i],1/12,more_sigmas_1mo[i],0,0)
+    rn_points += [extract_risk_neural_point(opt,h)]
+    opt2 = BSEuroCallOption(100,more_strikes2[i],3/12,more_sigmas_3mo[i],0,0)
+    rn_points2 += [extract_risk_neural_point(opt2,h)]
+
+plt.plot(more_strikes1,rn_points)
+plt.plot(more_strikes2,rn_points2)
+
+sigma_1mo_50D = .1824
+sigma_3mo_50D = .1645
+
+"""
+h = .01
+rn_points = []
+rn_points2 = []
+for i in range(len(more_strikes1)):
+    opt = BSEuroCallOption(100,more_strikes1[i],1/12,sigma_1mo_50D,0,0)
+    rn_points += [extract_risk_neural_point(opt,h)]
+    opt2 = BSEuroCallOption(100,more_strikes2[i],3/12,sigma_3mo_50D,0,0)
+    rn_points2 += [extract_risk_neural_point(opt2,h)]
+
+plt.plot(more_strikes1,rn_points)
+plt.plot(more_strikes2,rn_points2)
+"""
+delta_k1 = more_strikes1[1] - more_strikes1[0]
+delta_k2 = more_strikes2[1] - more_strikes2[0]
+
+price1 = sum([rn_points[i]*delta_k1 if more_strikes1[i] < 110 else 0 for i in range(len(more_strikes1))])
+price2 = sum([rn_points2[i]*delta_k2 if more_strikes2[i] > 105 else 0 for i in range(len(more_strikes2))])
+price3 = sum([.5*(delta_k1*rn_points[i]+rn_points2[i]*delta_k2) if more_strikes1[i] > 100 else 0 for i in range(len(more_strikes1))])
+#print("Put option price is:",price1)
+#print("Call option price is:", price2)
+#print("Call option price is:", price3)
+
+
+##################Question 2a: Checking Options for Arbitrage###################3
+
+opt_df = pd.read_excel("mf796-hw5-opt-data.xlsx")
+opt_df["call_mid"]= .5*(opt_df["call_bid"] + opt_df["call_ask"])
+opt_df["put_mid"]= .5*(opt_df["put_bid"] + opt_df["put_ask"])
+
+opt_df["call_chg_by_K"] = (opt_df["call_mid"] - opt_df["call_mid"].shift(1))/(opt_df["K"] - opt_df["K"].shift(1))
+
+
+opt_df["put_chg_by_K"] = (opt_df["put_mid"] - opt_df["put_mid"].shift(1))/(opt_df["K"] - opt_df["K"].shift(1))
+
+opt_df = opt_df.iloc[25:,:]
+
+
+
+
+
+################Question 2b: Heston Model Calibration
+guess = [2,0.2,0.5,-1,.1]
+lower = [0.01, 0.0, 0.0, -1, 0.0]
+upper = [5.0,  2.0, 1.0, 1, 1.0]
+s0 = 267.15
+K = 250
+q = .0177
+r =.015
+N = 12
+
+res = optim.minimize(Heston_Model(guess,s0,K,1,.015,.0177,12).Calibrate_Heston,guess,bounds = [(lower[i],upper[i]) for i in range(len(lower))],method='L-BFGS-B')
+print("RES:",res) 
+
+
+
+
+####################QUESTION 3: Hedging with Heston##################################
+
+
+
+
