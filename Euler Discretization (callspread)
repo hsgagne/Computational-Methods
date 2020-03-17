@@ -1,0 +1,125 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Mar 13 14:33:08 2020
+Homework 6
+@author: hsgag
+"""
+import numpy as np
+import Assignment_3
+
+def euler_discretization_spread(s0,k_long,k_short,t,r,sigma,smin,smax,num_t,num_s,opt_type):
+    hs = smax/num_s
+    ht = t/num_t
+    
+    #next we create the matrix A
+    s = np.arange(smin,smax+hs,hs)
+    #print("s",s)
+    a = 1 - sigma**2 * s**2 *ht/(hs**2) - r*ht
+    l = sigma**2 * s**2 * ht/(2*hs**2) - r*s*ht/(2*hs)
+    u = sigma**2*s**2*ht/(2*hs**2) + r*s*ht/(2*hs)
+    
+    a = a[1:num_s]
+    l = l[2:]
+    u = u[1:]
+    
+    A = np.diag(a)
+    for i in range(len(l)-1):
+        A[i+1][i] = l[i]
+    for i in range(len(u)-2):
+        A[i][i+1] = u[i]
+    result = np.linalg.eig(A)
+    e_vals = result[0]
+    
+    print("Max Eigenvalue is", e_vals.max())
+    print("Min Eigenvalue is", e_vals.min())
+    
+    payoff_long = s - k_long
+    k2 = k_short
+    payoff_short = s - k2
+    
+    for i in range(len(payoff_long)):
+        if payoff_long[i] < 0:
+            payoff_long[i] = 0
+        if payoff_short[i] < 0:
+            payoff_short[i] = 0
+    strat_payoff = payoff_long - payoff_short
+    
+    c = strat_payoff[1:]
+    
+    for i in range(num_t):
+        c = A.dot(c)
+        b_j = u[1] *(k_long -k_short) * np.exp(-r*i*ht)
+        c[0] = c[0] + b_j
+        if opt_type == "AM":
+            for i in range(len(c)):
+                if c[i] < strat_payoff[1:]:
+                    c[i] = strat_payoff[i]
+            
+    
+    return np.interp(s0, s[1:], c)
+
+
+def calculate_implied_volatility(option, value):
+
+    """returns the implied volitity of an option for a given price
+    inputs: option: a euro put or call, an instance of either BSOption
+            value: a nonnegative number
+    """
+    #variable initialization
+    accuracy = .0001
+    diff = option.value() -  value    
+    iter_count = 1
+    jump = option.sd/2
+    
+    #while loop runs whenever the diff is outside of the acceptable margin of error
+    while abs(diff) > accuracy:
+        if option.value() > value:
+            option.sd -= jump
+        elif option.value() < value:
+            option.sd += jump
+        else:
+            return
+        jump = jump /2
+        iter_count = iter_count + 1
+        diff = option.value() - value
+    return option.sd
+    #return statement is only executed once the while loop finishes
+        
+    
+if __name__  == '__main__':
+    
+    s0 = 312.86
+    k1 = 315
+    k2 = 320
+    rf = .0071
+    t = 146/252
+    
+    s_curr = 269.32
+    op1 = BSEuroCallOption(s_curr,k1,t,.1,rf,0)
+    op2 = BSEuroCallOption(s_curr,k1,t,.1,rf,0)
+    sigma1 = calculate_implied_volatility(op1,(2.44 + 4.45)/2)
+    sigma2 = calculate_implied_volatility(op2,(1.66 + 2.17)/2)
+    
+    sigma = (sigma1+sigma2)/2
+    print(sigma)
+    
+    smin = 0
+    smax = 400
+    num_t = 5000
+    num_s = 250
+    
+    ht = t/num_t
+    hs = smax/num_s
+    
+    print("ht is ",ht)
+    print("hs is",hs)
+    print("RHS of Stability", 1/(sigma**2*smax**2)*hs**2)
+    
+    spread_euro = euler_discretization(s0,k1,t,rf,sigma,smin,smax,num_t,num_s,"EU",k2)
+    spread_amer = euler_discretization(s0,k1,t,rf,sigma,smin,smax,num_t,num_s,"AM",k2)
+
+
+    print("EU Style Call Price: %5.4f"%call_euro)
+    print("American Style Call Price: %5.4f"%call_amer)
+    print("EU Style Spread Price:%5.4f"%spread_euro)
+    print("American Style Spread Price:%5.4f"%spread_amer)
