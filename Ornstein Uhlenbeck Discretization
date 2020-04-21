@@ -1,0 +1,57 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Wed Apr 15 13:00:12 2020
+
+@author: hsgag
+"""
+import numpy as np
+import math
+from scipy.fftpack import fft
+
+class OU_Model():
+
+    def __init__(self,lst,s0, t, rf, q):
+        
+        
+        
+        self.s0 = s0
+        self.t = t
+        self.rf = rf
+        self.q = q
+        self.sigma = lst[0]
+        self.mu = lst[1]
+        self.theta = lst[2]
+        self.paths = 'dummy'
+        
+    def generate_paths(self,num_paths,dt):
+        
+        if self.paths == 'dummy':
+            self.paths = [[self.s0] for i in range(num_paths)]
+
+            
+        for i in range(num_paths):
+            si = self.paths[i][-1]
+            Z = np.random.normal(0,1)
+            sii = si*np.exp(-self.theta*dt) + self.mu*(1-np.exp(-self.theta*dt)) + Z*self.sigma*np.sqrt((1-np.exp(-2*self.theta*dt))/(2*self.theta))
+            self.paths[i] += [sii]
+
+    
+if __name__ == '__main__':
+    
+    sigma = .5831
+    mu = 1.9075
+    theta = 3.1288
+    t = .5
+    big_K = 250
+    
+    lst = [sigma,mu,theta]
+    #create a pricing model
+    pricer = OU_Model(lst,3,1,0,0)
+    
+    paffs = pricer.generate_paths( 10,5)
+    
+    print(pricer.paths)
+
+    ######code to generate call prices for differing alphas#############################
+
+    
