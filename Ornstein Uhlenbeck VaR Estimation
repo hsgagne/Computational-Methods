@@ -1,0 +1,178 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Feb 13 12:44:19 2020
+
+@author: Henry
+"""
+
+import fix_yahoo_finance as yf
+import pandas as pd
+import numpy as np
+import numpy.linalg as la
+import datetime
+import matplotlib.pyplot as plt
+import scipy.stats as stat
+import OU_Simulation as ou
+
+def get_stock_history(stocks, start, end):
+    """
+    param: filename (the name of the input file as .csv)
+    return: numpy matrix of lognormal returns
+    """   
+
+    data = yf.download(stocks, start=start, end=end)
+    
+    data = data["Adj Close"]
+    data.fillna(value=None, method='ffill', axis=None, inplace=True, limit=None, downcast=None)
+    #data = np.log(data/data.shift(1))
+    data = data.iloc[1:]    
+    return data
+
+def de_mean_data(data):
+    new_df = pd.DataFrame()
+    for col in data.columns:
+        if not col == 'Date':
+            new_df[col] = data[col] - data[col].mean()
+    return new_df
+    
+def sort_simulation(S):
+    s = np.array(S)
+    s = np.sort(S)
+    print(s)
+    
+def calc_covariance_matrix(data):
+    data2 = np.matrix(data)
+    return data2.T*data2
+
+def eigenvalue_decomp(matrix):
+    return la.eig(matrix)
+   
+def calculate_var(data, sig_lvl):
+    
+    df = pd.DataFrame(data)
+    idx = round(len(df[1].values)*sig_lvl)
+    df = np.log(df/df.shift(1))
+    series = np.sort(df[1].values)
+    return series[idx]
+    
+
+
+        
+
+if __name__ == '__main__':
+    ##PROBLEM 1(1&2): Collecting Stock Data for Daily Returns
+    stocks_mega_cap = ['AAPL', 'GOOG', 'WMT', 'BRK-B', 'AMZN', 'MSFT','JNJ','JPM','BMY','V']
+    stocks_mid_cap = ['L','TAP','ADI','DBX','UI','SMG','VRNT','KW']
+    stocks_value = ['BRK-B','UNH','VZ','T', 'JNJ', 'PFE','BAC', 'CSCO','WMT','XOM']
+    stocks_growth = ["RBS", "AAL","UNM", "ANTM","CIT", "BBL"]
+    
+    window_len = 30
+    
+    port_descriptions = ['Mega']
+    start_t1 = datetime.datetime(2018,11,1)
+    end_t1 = datetime.datetime(2019,3,31)
+
+    start_t2 = datetime.datetime(2019,11,1)
+    end_t2 = datetime.datetime(2020,3,30)  
+    
+    start_forecast_t1 = datetime.datetime(2019,1,2)
+    start_forecast_t2 = datetime.datetime(2020,1,2)
+    
+    
+    stonks = [stocks_mega_cap]
+    starts = [start_t2]
+    ends = [end_t2]
+    varz = []
+    dummy_inputs = [1,1,1]
+    
+
+    
+    for a in range(len(stonks)):
+        for i in range(len(starts)):
+
+            data = get_stock_history(stonks[0],starts[i],ends[i])
+            data['port'] = 0
+            data['rowcount'] = [i for i in range(len(data['port']))]
+            for j in range(len(data.index)):
+                port_ret = np.mean(data.iloc[j])
+                data.iloc[j,-2] = port_ret
+            s0 = data['port'].head(1).values[0]
+            model = ou.OU_Model(dummy_inputs,s0,.25,0,0)
+            
+            #for k in range(len(data['rowcount'] - window_len)):
+            for k in range(75):   
+                start_row = data.loc[start_forecast_t2,'rowcount'] - window_len + k
+                end_row = start_row + window_len
+                curr_data = data.loc[(data['rowcount'] >= start_row) & (data['rowcount'] <= end_row)]
+                w = np.array([1/8 for i in range(8)])
+    
+
+                #data = de_mean_data(data)
+                
+                start = starts[i]
+                end = ends[i]
+            
+                
+                s_x = curr_data['port'].values
+                s_y = curr_data['port'].shift(-1).values
+                
+                s_x = np.array(s_x[:len(s_x)-1])
+                s_y = np.array(s_y[:len(s_y)-1])
+                n = len(s_x)
+                dt = 1/n
+                
+    #            slope, intercept, r_value, p_value, std_err = stat.linregress(s_x,s_y)
+    #
+    #            print(r_value**2,"rsquare")
+    #            plt.plot(s_x, s_y, 'o', label='original data')
+    #            plt.plot(s_x, intercept + slope*s_x, 'r', label='fitted line')
+    #            plt.legend()
+    #            plt.show()
+    
+                ###MLE
+                sx = sum(s_x)
+                sy = sum(s_y)
+                sxx = sum(s_x*s_x)
+                syy = sum(s_y*s_y)
+                sxy = sum(s_x*s_y)
+                
+                a = (n*sxy -sx*sy)/(n*sxx - sx*sx)
+                b = (sy - a*sx)/n
+    
+                sde = np.sqrt((n*syy - sy*sy - a*(n*sxy - sx*sy))/(n*(n-2)))
+                _lambda = -np.log(a)/dt
+                mu = b/(1-a)
+                sigma = sde*np.sqrt(-2*np.log(a)/(dt*(1-a**2)))
+                
+                lst = [sigma,mu,_lambda]
+                
+                model.sigma = lst[0]
+                model.mu = lst[1]
+                model.theta = _lambda
+                
+                model.generate_paths(50,model.t/window_len)
+                t_s = np.array([dt*i for i in range(n+1)])
+                #for paff in S:
+                #    plt.plot(t_s,paff)
+                curr_day = [row[-2:] for row in model.paths]
+
+                #print(curr_day)
+                varz += [calculate_var(curr_day,.05)]
+                
+                #varz += [calculate_var(sorted_rets,.05)]
+            print(varz)
+
+    
+    varz = np.matrix(varz)
+    t_s = np.array([dt*i for i in range(75)])
+    for paff in varz:
+         paff = paff.tolist()
+         plt.plot(t_s,paff[0])
+    plt.show()
+    #np.savetxt("var_t2.csv", varz, delimiter=",")
+            
+            
+            
+            
+            
+            
